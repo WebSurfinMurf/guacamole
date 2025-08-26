@@ -8,7 +8,7 @@ BLUE='\033[0;34m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${GREEN}=== Guacamole Deployment with Traefik (No SSO) ===${NC}"
+echo -e "${GREEN}=== Guacamole Deployment with Keycloak SSO ===${NC}"
 
 # Check if running as administrator user
 if [[ $EUID -eq 0 ]]; then
@@ -16,7 +16,7 @@ if [[ $EUID -eq 0 ]]; then
    exit 1
 fi
 
-# Load environment
+# Load database environment
 GUACAMOLE_ENV="/home/administrator/projects/secrets/guacamole.env"
 if [ ! -f "$GUACAMOLE_ENV" ]; then
     echo -e "${RED}Guacamole environment file not found!${NC}"
@@ -25,9 +25,24 @@ if [ ! -f "$GUACAMOLE_ENV" ]; then
 fi
 source "$GUACAMOLE_ENV"
 
+# Load SSO environment
+SSO_ENV="/home/administrator/projects/secrets/guacamole-sso.env"
+if [ ! -f "$SSO_ENV" ]; then
+    echo -e "${RED}SSO environment file not found!${NC}"
+    echo "Run ./setup-keycloak-sso.sh first"
+    exit 1
+fi
+source "$SSO_ENV"
+
 # Check if PostgreSQL is running
 if ! docker ps --format '{{.Names}}' | grep -qx "postgres"; then
     echo -e "${RED}PostgreSQL container is not running!${NC}"
+    exit 1
+fi
+
+# Check if Keycloak is running
+if ! curl -s "${OPENID_ISSUER}/.well-known/openid-configuration" >/dev/null 2>&1; then
+    echo -e "${RED}Keycloak is not reachable at ${OPENID_ISSUER}${NC}"
     exit 1
 fi
 
@@ -52,8 +67,8 @@ docker run -d \
 # Wait for guacd to start
 sleep 5
 
-# Deploy Guacamole with Traefik labels
-echo -e "${YELLOW}Deploying Guacamole with Traefik routing...${NC}"
+# Deploy Guacamole with SSO and Traefik labels
+echo -e "${YELLOW}Deploying Guacamole with Keycloak SSO...${NC}"
 docker run -d \
   --name guacamole-traefik \
   --restart unless-stopped \
@@ -66,6 +81,18 @@ docker run -d \
   -e GUACD_HOSTNAME="guacd-traefik" \
   -e GUACD_PORT="$GUACD_PORT" \
   -e WEBAPP_CONTEXT="ROOT" \
+  -e OPENID_AUTHORIZATION_ENDPOINT="$OPENID_AUTHORIZATION_ENDPOINT" \
+  -e OPENID_TOKEN_ENDPOINT="$OPENID_TOKEN_ENDPOINT" \
+  -e OPENID_JWKS_ENDPOINT="$OPENID_JWKS_ENDPOINT" \
+  -e OPENID_ISSUER="$OPENID_ISSUER" \
+  -e OPENID_CLIENT_ID="$OPENID_CLIENT_ID" \
+  -e OPENID_CLIENT_SECRET="$OPENID_CLIENT_SECRET" \
+  -e OPENID_REDIRECT_URI="$OPENID_REDIRECT_URI" \
+  -e OPENID_USERNAME_CLAIM_TYPE="$OPENID_USERNAME_CLAIM_TYPE" \
+  -e OPENID_GROUPS_CLAIM_TYPE="$OPENID_GROUPS_CLAIM_TYPE" \
+  -e OPENID_SCOPE="$OPENID_SCOPE" \
+  -e OPENID_ALLOWED_CLOCK_SKEW="$OPENID_ALLOWED_CLOCK_SKEW" \
+  -e OPENID_MAX_TOKEN_VALIDITY="$OPENID_MAX_TOKEN_VALIDITY" \
   --label "traefik.enable=true" \
   --label "traefik.docker.network=traefik-proxy" \
   --label "traefik.http.routers.guacamole.rule=Host(\`guacamole.ai-servicers.com\`)" \
@@ -113,6 +140,14 @@ else
     echo -e "${RED}✗ Not on Traefik network${NC}"
 fi
 
+# Check SSO configuration
+echo -e "${YELLOW}Checking SSO configuration...${NC}"
+if docker exec guacamole-traefik printenv | grep -q "OPENID_CLIENT_ID=$OPENID_CLIENT_ID"; then
+    echo -e "${GREEN}✓ SSO configured with client ID: $OPENID_CLIENT_ID${NC}"
+else
+    echo -e "${RED}✗ SSO configuration issues${NC}"
+fi
+
 # Test local access
 if curl -s -H "Host: guacamole.ai-servicers.com" https://localhost -k 2>/dev/null | grep -q "ng-app"; then
     echo -e "${GREEN}✓ Guacamole responding via Traefik${NC}"
@@ -120,29 +155,26 @@ else
     echo -e "${YELLOW}⚠ Cannot verify Traefik routing locally${NC}"
 fi
 
-# Test authentication
-if curl -s -X POST http://localhost:8080/api/tokens -d "username=guacadmin&password=guacadmin" 2>/dev/null | grep -q "authToken"; then
-    echo -e "${GREEN}✓ Database authentication working${NC}"
-else
-    echo -e "${RED}✗ Database authentication issues${NC}"
-fi
-
 echo ""
 echo -e "${GREEN}=== Deployment Complete ===${NC}"
 echo ""
 echo -e "${GREEN}Access Methods:${NC}"
-echo "1. Via Traefik (if DNS working): https://guacamole.ai-servicers.com/"
-echo "2. Direct container: http://$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' guacamole-traefik | head -1):8080/"
+echo "1. Via Keycloak SSO: https://guacamole.ai-servicers.com/"
+echo "   - Will redirect to Keycloak for authentication"
+echo "   - Users in 'administrators' group get admin access"
 echo ""
-echo -e "${YELLOW}Login Credentials:${NC}"
-echo "  Username: guacadmin"
-echo "  Password: guacadmin"
+echo "2. Direct database login (fallback):"
+echo "   - Username: guacadmin"
+echo "   - Password: guacadmin"
+echo ""
+echo -e "${YELLOW}SSO Configuration:${NC}"
+echo "  Keycloak: ${OPENID_ISSUER}"
+echo "  Client ID: ${OPENID_CLIENT_ID}"
+echo "  Groups claim: ${OPENID_GROUPS_CLAIM_TYPE}"
 echo ""
 echo -e "${BLUE}Troubleshooting:${NC}"
 echo "  Check logs: docker logs guacamole-traefik --tail 50"
-echo "  Check Traefik: docker logs traefik --tail 20 | grep guacamole"
+echo "  Check SSO: docker exec guacamole-traefik printenv | grep OPENID"
+echo "  Check Keycloak: ${OPENID_ISSUER}"
 echo ""
-echo -e "${YELLOW}Note: If external access doesn't work, check:${NC}"
-echo "1. DNS resolution (nslookup guacamole.ai-servicers.com)"
-echo "2. Cloudflare proxy settings (should be DNS-only, not proxied)"
-echo "3. Firewall rules (ports 80/443 open)"
+echo -e "${YELLOW}Note: First SSO login may take longer as user is provisioned${NC}"

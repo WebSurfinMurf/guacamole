@@ -1,6 +1,6 @@
 # Apache Guacamole - Remote Access Gateway
 
-Apache Guacamole provides clientless remote desktop access via web browser.
+Apache Guacamole with Keycloak SSO integration for clientless remote desktop access.
 
 ## Quick Start
 
@@ -8,15 +8,25 @@ Apache Guacamole provides clientless remote desktop access via web browser.
 # Initialize database (first time only)
 ./initdatabase.sh
 
-# Deploy Guacamole
+# Deploy Guacamole with SSO
 ./deploy.sh
 ```
 
 ## Access
 
 - **URL**: https://guacamole.ai-servicers.com/
-- **Username**: guacadmin
-- **Password**: guacadmin
+- **SSO**: Redirects to Keycloak for authentication
+- **Fallback**: guacadmin/guacadmin (database auth)
+
+## Authentication
+
+1. **Primary**: Keycloak SSO
+   - Users automatically provisioned on first login
+   - Users in 'administrators' group get admin access
+
+2. **Fallback**: Database authentication
+   - Username: guacadmin
+   - Password: guacadmin
 
 ## Available Connections
 
@@ -25,9 +35,17 @@ Apache Guacamole provides clientless remote desktop access via web browser.
 
 ## Scripts
 
-- `deploy.sh` - Deploy/restart Guacamole with Traefik
+- `deploy.sh` - Deploy Guacamole with Keycloak SSO
 - `initdatabase.sh` - Initialize PostgreSQL database
 - `add-connection.sh` - Add new SSH/RDP/VNC connections
+- `setup-keycloak-sso.sh` - Configure SSO settings
+- `configure-keycloak-client.sh` - Auto-configure Keycloak client
+
+## Keycloak Configuration
+
+- **Client ID**: guacamole
+- **Admin Group**: administrators
+- **Realm**: master
 
 ## Documentation
 
