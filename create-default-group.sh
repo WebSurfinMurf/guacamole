@@ -96,7 +96,7 @@ SELECT
 FROM guacamole_entity g
 CROSS JOIN guacamole_entity u
 WHERE g.name = 'sso-users' AND g.type = 'USER_GROUP'
-  AND u.name IN ('administrator', 'websurfinmurf') AND u.type = 'USER'
+  AND u.name LIKE '%admin%' AND u.type = 'USER'
 ON CONFLICT DO NOTHING;
 
 -- Show results
@@ -127,7 +127,7 @@ echo ""
 echo -e "${BLUE}What was done:${NC}"
 echo "1. Fixed administrator user in database"
 echo "2. Created 'sso-users' group with connection access"
-echo "3. Added administrator and websurfinmurf to the group"
+echo "3. Added admin users to the group"
 echo ""
 echo -e "${YELLOW}For new SSO users:${NC}"
 echo "After they login, add them to the 'sso-users' group in Guacamole admin UI"

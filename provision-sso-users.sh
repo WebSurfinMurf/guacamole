@@ -16,7 +16,7 @@ echo ""
 
 # Ask for usernames to provision
 echo -e "${BLUE}Enter SSO usernames to provision (comma-separated):${NC}"
-echo -e "${YELLOW}Example: administrator,websurfinmurf,user1,user2${NC}"
+echo -e "${YELLOW}Example: admin1,user1,user2${NC}"
 read -p "Usernames: " usernames
 
 # Convert comma-separated to SQL array format
@@ -54,7 +54,7 @@ ON CONFLICT DO NOTHING;
 -- Grant admin permissions if username contains 'admin' or is specifically listed
 DO \$\$
 BEGIN
-    IF '$username' LIKE '%admin%' OR '$username' IN ('administrator', 'websurfinmurf') THEN
+    IF '$username' LIKE '%admin%' THEN
         INSERT INTO guacamole_system_permission (entity_id, permission)
         SELECT e.entity_id, p.permission::guacamole_system_permission_type
         FROM guacamole_entity e

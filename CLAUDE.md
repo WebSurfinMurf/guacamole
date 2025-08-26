@@ -169,7 +169,7 @@ OPENID_JWKS_ENDPOINT=http://keycloak:8080/realms/master/protocol/openid-connect/
 **Solution**: Run provision-sso-users.sh to create database shadow users:
 ```bash
 ./provision-sso-users.sh
-# Enter usernames: administrator,websurfinmurf
+# Enter usernames matching Keycloak users
 ```
 
 ## Docker Containers
