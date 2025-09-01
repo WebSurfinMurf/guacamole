@@ -5,9 +5,13 @@ Apache Guacamole provides clientless remote desktop access via web browser. Supp
 
 ## Current Status
 - **Status**: ✅ WORKING WITH KEYCLOAK SSO
-- **URL**: https://guacamole.ai-servicers.com/
-- **Primary Auth**: Keycloak SSO (OpenID Connect)
-- **Fallback Auth**: PostgreSQL database (guacadmin/guacadmin)
+- **External URL**: https://guacamole.ai-servicers.com/ (with Keycloak SSO)
+- **Local URLs**: 
+  - http://localhost:8090/ (database auth)
+  - http://guacamole.linuxserver.lan:8090/ (database auth)
+  - http://[server-ip]:8090/ (database auth)
+- **Primary Auth**: Keycloak SSO (OpenID Connect) - external only
+- **Local Auth**: PostgreSQL database (guacadmin/guacadmin)
 - **Admin Group**: Users in 'administrators' Keycloak group get admin access
 - **Connection Access**: All authenticated users get SSH/RDP access automatically
 
@@ -26,10 +30,13 @@ Target Servers (SSH/RDP/VNC)
 
 ### Production Deployment with Keycloak SSO
 - **Script**: `./deploy.sh`
-- **Access**: Via Traefik reverse proxy
-- **Primary Auth**: Keycloak SSO (OpenID Connect)
-- **Fallback Auth**: PostgreSQL database
-- **URL**: https://guacamole.ai-servicers.com/
+- **Access Methods**:
+  - External: Via Traefik reverse proxy (HTTPS with SSO)
+  - Local: Direct port 8090 (HTTP with database auth)
+- **URLs**:
+  - External: https://guacamole.ai-servicers.com/ (SSO enabled)
+  - Local: http://guacamole.linuxserver.lan:8090/ (database auth)
+  - Local: http://localhost:8090/ (database auth)
 - **SSO Users**: Automatically provisioned on first login
 - **Admin Access**: Users in 'administrators' Keycloak group
 
@@ -78,6 +85,7 @@ PostgreSQL uses SCRAM-SHA-256 by default, but guacamole_user had no password or 
 - **auto-configure-keycloak.sh** - Automated Keycloak client configuration
 - **provision-sso-users.sh** - Create database entries for SSO users
 - **create-default-group.sh** - Setup sso-users group with connection permissions
+- **configure-dynamic-username.sh** - Configure connections to use authenticated username
 
 ### Configuration Files
 - **/home/administrator/projects/secrets/guacamole.env** - Database configuration
@@ -122,9 +130,9 @@ PostgreSQL uses SCRAM-SHA-256 by default, but guacamole_user had no password or 
 # Check for old containers
 docker ps -a | grep guacamole
 # Remove conflicting containers
-docker rm guacamole guacd  # Remove old containers
-# Redeploy with unique names (guacamole-traefik, guacd-traefik)
-./deploy-traefik.sh
+docker rm guacamole-traefik guacd-traefik  # Remove old containers
+# Redeploy with new names (guacamole, guacd)
+./deploy.sh
 ```
 
 ### 4. Invalid Login
@@ -147,16 +155,26 @@ WHERE connection_id = 1 AND parameter_name = 'hostname';
 ### 6. SSH Password Prompt
 **Note**: After logging into Guacamole, you'll see a password prompt. This is the SSH password for your target server, NOT the Guacamole password.
 
-### 7. SSO Login Issues
+### 7. guacd Shows "Starting" in Portainer
+**Symptom**: guacd works but shows "health: starting" status  
+**Cause**: Default health check interval is 5 minutes (300 seconds)  
+**Solution**: Custom health check with shorter interval (30s) added in deploy.sh
+
+### 8. SSO Users Connect with Wrong Username
+**Symptom**: User "websurfinmurf" logs in via Keycloak but SSH uses "administrator"  
+**Cause**: Connection configured with hardcoded username  
+**Solution**: Use `${GUAC_USERNAME}` token in connection parameters (now configured)
+
+### 9. SSO Login Issues
 
 #### "Invalid login" on OpenID URL
-**Symptom**: Accessing https://guacamole.ai-servicers.com/#/login/openid shows "Invalid login"
-**Cause**: Implicit flow not enabled in Keycloak client
+**Symptom**: Accessing https://guacamole.ai-servicers.com/#/login/openid shows "Invalid login"  
+**Cause**: Implicit flow not enabled in Keycloak client  
 **Solution**: Enable implicit flow in Keycloak client settings
 
 #### Token Validation Timeout
-**Symptom**: "Connect timed out" errors in logs after Keycloak authentication
-**Cause**: Guacamole trying to reach Keycloak via external URL from container
+**Symptom**: "Connect timed out" errors in logs after Keycloak authentication  
+**Cause**: Guacamole trying to reach Keycloak via external URL from container  
 **Solution**: Use internal URLs for token/JWKS endpoints:
 ```bash
 OPENID_TOKEN_ENDPOINT=http://keycloak:8080/realms/master/protocol/openid-connect/token
@@ -164,8 +182,8 @@ OPENID_JWKS_ENDPOINT=http://keycloak:8080/realms/master/protocol/openid-connect/
 ```
 
 #### SSO Users Don't See Connections
-**Symptom**: User can login via SSO but sees no connections
-**Cause**: SSO users are ephemeral without database entries
+**Symptom**: User can login via SSO but sees no connections  
+**Cause**: SSO users are ephemeral without database entries  
 **Solution**: Run provision-sso-users.sh to create database shadow users:
 ```bash
 ./provision-sso-users.sh
@@ -174,8 +192,8 @@ OPENID_JWKS_ENDPOINT=http://keycloak:8080/realms/master/protocol/openid-connect/
 
 ## Docker Containers
 
-- **guacamole-traefik** - Web application (via reverse proxy)
-- **guacd-traefik** - Proxy daemon for protocol handling
+- **guacamole** - Web application (via reverse proxy)
+- **guacd** - Proxy daemon for protocol handling
 
 ## Networks
 - guacamole-net (main network)
@@ -187,7 +205,15 @@ OPENID_JWKS_ENDPOINT=http://keycloak:8080/realms/master/protocol/openid-connect/
 
 ### Currently Configured
 1. **Local SSH Server** - Terminal access to linuxserver.lan:22
+   - Uses authenticated user's username (${GUAC_USERNAME})
 2. **Local RDP Desktop** - Full desktop access to linuxserver.lan:3389
+   - Uses authenticated user's username (${GUAC_USERNAME})
+
+### Dynamic Username Configuration
+Connections are configured to use `${GUAC_USERNAME}` token, which means:
+- When user "websurfinmurf" logs in via Keycloak, SSH/RDP will use "websurfinmurf" as the username
+- Each user connects with their own credentials automatically
+- Users must have matching accounts on target systems
 
 ### Quick Commands
 
@@ -198,12 +224,15 @@ OPENID_JWKS_ENDPOINT=http://keycloak:8080/realms/master/protocol/openid-connect/
 # Add new connections (SSH/RDP/VNC/Telnet)
 ./add-connection.sh
 
+# Configure dynamic username for connections
+./configure-dynamic-username.sh
+
 # Check status
 ./deploy.sh  # Then select option 6
 
 # View logs
-docker logs guacamole-traefik --tail 50
-docker logs guacd-traefik --tail 50
+docker logs guacamole --tail 50
+docker logs guacd --tail 50
 ```
 
 ## Troubleshooting Steps
@@ -289,6 +318,12 @@ docker logs guacd-traefik --tail 50
 
 8. **Simple is Better**: File-based auth (user-mapping.xml) works instantly without database complexity for testing.
 
+9. **Network Order Matters**: Container must be created with traefik-proxy network first, not added later, or Traefik will use wrong IP.
+
+10. **Health Check Intervals**: Default guacd health check is 5 minutes. Override with custom --health-interval for faster status updates.
+
+11. **Dynamic Usernames**: Use `${GUAC_USERNAME}` token in connection parameters to automatically use authenticated user's username.
+
 ## Deployment Steps
 
 ### With Keycloak SSO (Recommended)
@@ -325,5 +360,5 @@ docker logs guacd-traefik --tail 50
    - Or use database auth: guacadmin/guacadmin
 
 ---
-*Created: 2025-01-26 by Claude*
-*Last Updated: 2025-08-26 - Complete Keycloak SSO implementation with auto-provisioning*
+*Created: 2025-01-26 by Claude*  
+*Last Updated: 2025-08-31 - Fixed container names, network order, health checks, and dynamic username configuration*

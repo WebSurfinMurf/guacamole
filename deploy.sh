@@ -48,6 +48,9 @@ fi
 
 # Stop and remove existing containers
 echo -e "${YELLOW}Stopping existing Guacamole containers...${NC}"
+docker kill guacd guacamole 2>/dev/null || true
+docker rm guacd guacamole 2>/dev/null || true
+# Also remove old named containers if they exist
 docker kill guacd-traefik guacamole-traefik 2>/dev/null || true
 docker rm guacd-traefik guacamole-traefik 2>/dev/null || true
 
@@ -59,26 +62,43 @@ docker network create traefik-proxy 2>/dev/null || echo "Network traefik-proxy a
 # Deploy guacd (the proxy daemon)
 echo -e "${YELLOW}Deploying guacd daemon...${NC}"
 docker run -d \
-  --name guacd-traefik \
+  --name guacd \
   --restart unless-stopped \
   --network guacamole-net \
+  --health-cmd="nc -z 127.0.0.1 4822 || exit 1" \
+  --health-interval=30s \
+  --health-timeout=5s \
+  --health-retries=3 \
+  --health-start-period=10s \
   guacamole/guacd:latest
 
-# Wait for guacd to start
-sleep 5
+# Wait for guacd to be ready
+echo -e "${YELLOW}Waiting for guacd to be ready...${NC}"
+for i in {1..30}; do
+    if docker exec guacd nc -z 127.0.0.1 4822 2>/dev/null; then
+        echo -e "${GREEN}✓ guacd is ready${NC}"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo -e "${RED}✗ guacd failed to start properly${NC}"
+        exit 1
+    fi
+    sleep 1
+done
 
 # Deploy Guacamole with SSO and Traefik labels
 echo -e "${YELLOW}Deploying Guacamole with Keycloak SSO...${NC}"
 docker run -d \
-  --name guacamole-traefik \
+  --name guacamole \
   --restart unless-stopped \
-  --network guacamole-net \
+  --network traefik-proxy \
+  -p 8090:8080 \
   -e POSTGRESQL_HOSTNAME="$POSTGRES_HOSTNAME" \
   -e POSTGRESQL_PORT="$POSTGRES_PORT" \
   -e POSTGRESQL_DATABASE="$POSTGRES_DATABASE" \
   -e POSTGRESQL_USERNAME="$POSTGRES_USER" \
   -e POSTGRESQL_PASSWORD="$POSTGRES_PASSWORD" \
-  -e GUACD_HOSTNAME="guacd-traefik" \
+  -e GUACD_HOSTNAME="guacd" \
   -e GUACD_PORT="$GUACD_PORT" \
   -e WEBAPP_CONTEXT="ROOT" \
   -e OPENID_AUTHORIZATION_ENDPOINT="$OPENID_AUTHORIZATION_ENDPOINT" \
@@ -108,9 +128,9 @@ docker run -d \
 
 # Connect to networks
 echo -e "${YELLOW}Connecting to networks...${NC}"
-docker network connect traefik-proxy guacamole-traefik
-docker network connect postgres-net guacamole-traefik 2>/dev/null || echo "Already connected to postgres-net"
-docker network connect postgres-net guacd-traefik 2>/dev/null || echo "guacd already connected to postgres-net"
+docker network connect guacamole-net guacamole 2>/dev/null || echo "Already connected to guacamole-net"
+docker network connect postgres-net guacamole 2>/dev/null || echo "Already connected to postgres-net"
+docker network connect postgres-net guacd 2>/dev/null || echo "guacd already connected to postgres-net"
 docker network connect guacamole-net postgres 2>/dev/null || echo "postgres already connected to guacamole-net"
 
 echo -e "${YELLOW}Waiting for services to start...${NC}"
@@ -121,20 +141,20 @@ echo ""
 echo -e "${YELLOW}=== Health Check ===${NC}"
 
 # Check containers
-if docker ps | grep -q "guacd-traefik.*Up"; then
+if docker ps | grep -q "guacd.*Up"; then
     echo -e "${GREEN}✓ guacd daemon running${NC}"
 else
     echo -e "${RED}✗ guacd daemon issues${NC}"
 fi
 
-if docker ps | grep -q "guacamole-traefik.*Up"; then
+if docker ps | grep -q "guacamole.*Up"; then
     echo -e "${GREEN}✓ Guacamole web app running${NC}"
 else
     echo -e "${RED}✗ Guacamole web app issues${NC}"
 fi
 
 # Check Traefik network
-if docker network inspect traefik-proxy | grep -q "guacamole-traefik"; then
+if docker network inspect traefik-proxy | grep -q "guacamole"; then
     echo -e "${GREEN}✓ Connected to Traefik network${NC}"
 else
     echo -e "${RED}✗ Not on Traefik network${NC}"
@@ -142,7 +162,7 @@ fi
 
 # Check SSO configuration
 echo -e "${YELLOW}Checking SSO configuration...${NC}"
-if docker exec guacamole-traefik printenv | grep -q "OPENID_CLIENT_ID=$OPENID_CLIENT_ID"; then
+if docker exec guacamole printenv | grep -q "OPENID_CLIENT_ID=$OPENID_CLIENT_ID"; then
     echo -e "${GREEN}✓ SSO configured with client ID: $OPENID_CLIENT_ID${NC}"
 else
     echo -e "${RED}✗ SSO configuration issues${NC}"
@@ -159,11 +179,16 @@ echo ""
 echo -e "${GREEN}=== Deployment Complete ===${NC}"
 echo ""
 echo -e "${GREEN}Access Methods:${NC}"
-echo "1. Via Keycloak SSO: https://guacamole.ai-servicers.com/"
-echo "   - Will redirect to Keycloak for authentication"
+echo ""
+echo -e "${BLUE}1. External (with Keycloak SSO):${NC}"
+echo "   - URL: https://guacamole.ai-servicers.com/"
+echo "   - Authentication: Keycloak SSO"
 echo "   - Users in 'administrators' group get admin access"
 echo ""
-echo "2. Direct database login (fallback):"
+echo -e "${BLUE}2. Local Network (database auth only):${NC}"
+echo "   - URL: http://localhost:8090/"
+echo "   - URL: http://$(hostname -I | awk '{print $1}'):8090/"
+echo "   - URL: http://guacamole.linuxserver.lan:8090/ (add to /etc/hosts)"
 echo "   - Username: guacadmin"
 echo "   - Password: guacadmin"
 echo ""
@@ -173,8 +198,8 @@ echo "  Client ID: ${OPENID_CLIENT_ID}"
 echo "  Groups claim: ${OPENID_GROUPS_CLAIM_TYPE}"
 echo ""
 echo -e "${BLUE}Troubleshooting:${NC}"
-echo "  Check logs: docker logs guacamole-traefik --tail 50"
-echo "  Check SSO: docker exec guacamole-traefik printenv | grep OPENID"
+echo "  Check logs: docker logs guacamole --tail 50"
+echo "  Check SSO: docker exec guacamole printenv | grep OPENID"
 echo "  Check Keycloak: ${OPENID_ISSUER}"
 echo ""
 echo -e "${YELLOW}Note: First SSO login may take longer as user is provisioned${NC}"
