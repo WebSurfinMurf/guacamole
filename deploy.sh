@@ -57,7 +57,7 @@ docker rm guacd-traefik guacamole-traefik 2>/dev/null || true
 # Create networks if needed
 echo -e "${YELLOW}Setting up networks...${NC}"
 docker network create guacamole-net 2>/dev/null || echo "Network guacamole-net already exists"
-docker network create traefik-proxy 2>/dev/null || echo "Network traefik-proxy already exists"
+docker network create traefik-net 2>/dev/null || echo "Network traefik-net already exists"
 
 # Deploy guacd (the proxy daemon)
 echo -e "${YELLOW}Deploying guacd daemon...${NC}"
@@ -91,7 +91,7 @@ echo -e "${YELLOW}Deploying Guacamole with Keycloak SSO...${NC}"
 docker run -d \
   --name guacamole \
   --restart unless-stopped \
-  --network traefik-proxy \
+  --network traefik-net \
   -p 8090:8080 \
   -e POSTGRESQL_HOSTNAME="$POSTGRES_HOSTNAME" \
   -e POSTGRESQL_PORT="$POSTGRES_PORT" \
@@ -114,7 +114,7 @@ docker run -d \
   -e OPENID_ALLOWED_CLOCK_SKEW="$OPENID_ALLOWED_CLOCK_SKEW" \
   -e OPENID_MAX_TOKEN_VALIDITY="$OPENID_MAX_TOKEN_VALIDITY" \
   --label "traefik.enable=true" \
-  --label "traefik.docker.network=traefik-proxy" \
+  --label "traefik.docker.network=traefik-net" \
   --label "traefik.http.routers.guacamole.rule=Host(\`guacamole.ai-servicers.com\`)" \
   --label "traefik.http.routers.guacamole.entrypoints=websecure" \
   --label "traefik.http.routers.guacamole.tls=true" \
@@ -154,7 +154,7 @@ else
 fi
 
 # Check Traefik network
-if docker network inspect traefik-proxy | grep -q "guacamole"; then
+if docker network inspect traefik-net | grep -q "guacamole"; then
     echo -e "${GREEN}✓ Connected to Traefik network${NC}"
 else
     echo -e "${RED}✗ Not on Traefik network${NC}"
