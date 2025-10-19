@@ -40,7 +40,7 @@ read -p "Press Enter when Keycloak has been updated..."
 
 # Update the SSO environment to include local domain
 echo -e "\n${YELLOW}Updating SSO configuration...${NC}"
-SSO_ENV="/home/administrator/projects/secrets/guacamole-sso.env"
+SSO_ENV="$HOME/projects/secrets/guacamole-sso.env"
 
 # Check if local domain redirect is already configured
 if ! grep -q "LOCAL_REDIRECT_URI" "$SSO_ENV"; then

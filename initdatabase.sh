@@ -18,7 +18,7 @@ if [[ $EUID -eq 0 ]]; then
 fi
 
 # Load or create environment
-GUACAMOLE_ENV="/home/administrator/projects/secrets/guacamole.env"
+GUACAMOLE_ENV="$HOME/projects/secrets/guacamole.env"
 if [ ! -f "$GUACAMOLE_ENV" ]; then
     echo -e "${YELLOW}Creating Guacamole environment file...${NC}"
     

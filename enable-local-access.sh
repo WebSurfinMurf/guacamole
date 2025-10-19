@@ -51,8 +51,8 @@ docker run -d \
   --name $CONTAINER_NAME \
   --network guacamole-net \
   -p ${LOCAL_PORT}:8080 \
-  --env-file /home/administrator/projects/secrets/guacamole.env \
-  --env-file /home/administrator/projects/secrets/guacamole-sso.env \
+  --env-file $HOME/projects/secrets/guacamole.env \
+  --env-file $HOME/projects/secrets/guacamole-sso.env \
   -e WEBAPP_CONTEXT="ROOT" \
   -e GUACD_HOSTNAME="guacd" \
   -e GUACD_PORT="4822" \

@@ -183,7 +183,7 @@ fi
 
 # Update SSO environment file
 echo -e "${YELLOW}Updating SSO configuration file...${NC}"
-SSO_ENV="/home/administrator/projects/secrets/guacamole-sso.env"
+SSO_ENV="$HOME/projects/secrets/guacamole-sso.env"
 
 cat > "$SSO_ENV" << EOF
 # Guacamole Keycloak SSO Configuration

@@ -17,7 +17,7 @@ if [[ $EUID -eq 0 ]]; then
 fi
 
 # Load database environment
-GUACAMOLE_ENV="/home/administrator/projects/secrets/guacamole.env"
+GUACAMOLE_ENV="$HOME/projects/secrets/guacamole.env"
 if [ ! -f "$GUACAMOLE_ENV" ]; then
     echo -e "${RED}Guacamole environment file not found!${NC}"
     echo "Run ./initdatabase.sh first"
@@ -26,7 +26,7 @@ fi
 source "$GUACAMOLE_ENV"
 
 # Load SSO environment
-SSO_ENV="/home/administrator/projects/secrets/guacamole-sso.env"
+SSO_ENV="$HOME/projects/secrets/guacamole-sso.env"
 if [ ! -f "$SSO_ENV" ]; then
     echo -e "${RED}SSO environment file not found!${NC}"
     echo "Run ./setup-keycloak-sso.sh first"

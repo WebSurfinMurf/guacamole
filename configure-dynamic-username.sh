@@ -14,7 +14,7 @@ echo "user's username instead of a hardcoded value."
 echo ""
 
 # Load database environment
-GUACAMOLE_ENV="/home/administrator/projects/secrets/guacamole.env"
+GUACAMOLE_ENV="$HOME/projects/secrets/guacamole.env"
 if [ ! -f "$GUACAMOLE_ENV" ]; then
     echo -e "${RED}Guacamole environment file not found!${NC}"
     exit 1
