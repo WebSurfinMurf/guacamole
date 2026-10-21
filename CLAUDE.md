@@ -190,6 +190,56 @@ OPENID_JWKS_ENDPOINT=http://keycloak:8080/realms/master/protocol/openid-connect/
 # Enter usernames matching Keycloak users
 ```
 
+### 10. Connection ID Sequence Drift — "unexpected error" on New Connection
+**Symptom**: Creating a connection in the web UI fails with a generic "unexpected error".
+Logs show:
+```
+ERROR o.a.g.rest.RESTExceptionMapper - Unexpected internal error:
+  duplicate key value violates unique constraint "guacamole_connection_pkey"
+  Detail: Key (connection_id)=(N) already exists.
+```
+Each retry fails with N+1 — the sequence walks forward until it clears the highest existing id.
+
+**Cause**: `guacamole_connection_connection_id_seq` is behind `MAX(connection_id)`.
+The web UI omits `connection_id` and relies on the sequence default; if rows were
+inserted with an **explicit** `connection_id`, the sequence was never advanced.
+Historically caused by `add-connection.sh` computing `MAX(connection_id)+1` in shell
+(fixed 2026-07-27 — the script now lets the sequence assign the id).
+
+**Diagnose**:
+```bash
+docker exec postgres psql -U admin -d guacamole_db -c \
+  "SELECT (SELECT MAX(connection_id) FROM guacamole_connection) AS max_id,
+          last_value, is_called FROM guacamole_connection_connection_id_seq;"
+```
+Drift = `last_value < max_id`.
+
+**Fix**:
+```bash
+docker exec postgres psql -U admin -d guacamole_db -c \
+  "SELECT setval('guacamole_connection_connection_id_seq',
+                 (SELECT MAX(connection_id) FROM guacamole_connection), true);"
+```
+No restart needed — the next insert picks up immediately.
+
+**Prevention**: never write `connection_id` explicitly. Let the column default
+(`nextval(...)`) assign it and capture it with `RETURNING`. The same applies to
+`guacamole_user`, `guacamole_entity`, `guacamole_connection_group`, and
+`guacamole_user_group` — all use sequences and all drift the same way.
+
+### 11. Container Targets Need guacd on the Same Docker Network
+**Symptom**: Connection saves fine but fails to connect to a hostname that is a
+Docker container name.
+**Cause**: guacd — not the guacamole webapp — opens the connection. guacd is on
+`guacamole-net` and `postgres-net` only, so it cannot resolve or reach containers
+on other project networks.
+**Solution**: attach guacd to the target's network (and add it to `deploy.sh` so it
+survives redeployment):
+```bash
+docker network connect <target-net> guacd
+```
+Verify: `docker exec guacd getent hosts <container-name>`
+
 ## Docker Containers
 
 - **guacamole** - Web application (via reverse proxy)
